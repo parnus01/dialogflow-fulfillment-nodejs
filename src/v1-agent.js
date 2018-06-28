@@ -141,47 +141,61 @@ class V1Agent {
   }
 
   /**
-   * Send v1 text response to Dialogflow fulfillment webhook request based on
+   * Add v1 text response to Dialogflow fulfillment webhook request based on
    * single, developer defined text response
    *
    * @private
    */
-  sendTextResponse_() {
+  addTextResponse_() {
     const message = this.agent.responseMessages_[0];
     const speech = message.ssml || message.text;
     this.sendJson_({speech: speech, displayText: message.text});
   }
 
   /**
-   * Send v1 payload response to Dialogflow fulfillment webhook request based
+   * Add v1 payload response to Dialogflow fulfillment webhook request based
    * on developer defined payload response
    *
    * @param {Object} payload to back to requestSource (i.e. Google, Slack, etc.)
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendPayloadResponse_(payload, requestSource) {
+  addPayloadResponse_(payload, requestSource) {
     this.sendJson_({data: payload.getPayload_(requestSource)});
   }
 
   /**
-   * Send v1 response to Dialogflow fulfillment webhook request based on developer
+   * Add v1 response to Dialogflow fulfillment webhook request based on developer
    * defined response messages and original request source
    *
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendMessagesResponse_(requestSource) {
+  addMessagesResponse_(requestSource) {
     this.sendJson_({messages: this.buildResponseMessages_(requestSource)});
   }
 
   /**
-   * Send v1 response to Dialogflow fulfillment webhook request
+   * Add v1 response to Dialogflow fulfillment webhook request
    *
    * @param {Object} responseJson JSON to send to Dialogflow
    * @private
    */
-  sendJson_(responseJson) {
+  addJson_(responseJson) {
+    if (!this.responseJson_) {
+      this.responseJson_ = {};
+    }
+    this.responseJson_.assign(responseJson);
+  }
+  
+  /**
+   * Send v1 response to Dialogflow fulfillment webhook request
+   *
+   * @private
+   */
+  sendResponse_() {
+    let responseJson = this.responseJson_ || {};
+    
     responseJson.contextOut = this.agent.outgoingContexts_;
     this.agent.followupEvent_ ? responseJson.followupEvent = this.agent.followupEvent_ : undefined;
 
