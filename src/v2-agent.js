@@ -215,7 +215,7 @@ class V2Agent {
    */
   sendResponses_(requestSource) {
     let responseJson = this.responseJson_;
-    if (!responseJson_) {
+    if (!responseJson) {
       throw new Error(`No responses defined for platform: ${requestSource}`);
     }
     
