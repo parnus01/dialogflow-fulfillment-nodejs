@@ -210,10 +210,15 @@ class V2Agent {
   /**
    * Send v2 response to Dialogflow fulfillment webhook request
    *
+   * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendResponse_() {
-    let responseJson = this.responseJson_ || {};
+  sendResponses_(requestSource) {
+    let responseJson = this.responseJson_;
+    if (!responseJson_) {
+      throw new Error(`No responses defined for platform: ${requestSource}`);
+    }
+    
     responseJson.outputContexts = this.agent.outgoingContexts_;
     this.agent.followupEvent_ ? responseJson.followupEventInput = this.agent.followupEvent_ : undefined;
 
