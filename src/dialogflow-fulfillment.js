@@ -454,7 +454,7 @@ class WebhookClient {
       this.client.addPayloadResponse_(payload, requestSource);
     }
     if (SUPPORTED_RICH_MESSAGE_PLATFORMS.indexOf(this.requestSource) > -1
-      || Object.values(PLATFORMS).indexOf(this.requestSource) < 0) {
+      || Object.keys(PLATFORMS).map(key => PLATFORMS[key]).indexOf(this.requestSource) < 0) {
       this.client.addMessagesResponse_(requestSource);
     }
     this.client.sendResponses_(requestSource);
