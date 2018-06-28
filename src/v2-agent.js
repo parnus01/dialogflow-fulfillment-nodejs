@@ -158,7 +158,7 @@ class V2Agent {
   }
 
   /**
-   * Send v2 text response to Dialogflow fulfillment webhook request based on
+   * Add v2 text response to Dialogflow fulfillment webhook request based on
    * single, developer defined text response
    *
    * @private
@@ -170,7 +170,7 @@ class V2Agent {
   }
 
   /**
-   * Send v2 payload response to Dialogflow fulfillment webhook request based
+   * Add v2 payload response to Dialogflow fulfillment webhook request based
    * on developer defined payload response
    *
    * @param {Object} payload to back to requestSource (i.e. Google, Slack, etc.)
@@ -182,7 +182,7 @@ class V2Agent {
   }
 
   /**
-   * Send v2 response to Dialogflow fulfillment webhook request based on developer
+   * Add v2 response to Dialogflow fulfillment webhook request based on developer
    * defined response messages and original request source
    *
    * @param {string} requestSource string indicating the source of the initial request
@@ -195,7 +195,7 @@ class V2Agent {
   }
 
   /**
-   * Send v2 response to Dialogflow fulfillment webhook request
+   * Add v2 response to Dialogflow fulfillment webhook request
    *
    * @param {Object} responseJson JSON to send to Dialogflow
    * @private
