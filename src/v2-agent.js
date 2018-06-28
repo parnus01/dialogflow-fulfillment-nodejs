@@ -163,10 +163,10 @@ class V2Agent {
    *
    * @private
    */
-  sendTextResponse_() {
+  addTextResponse_() {
     const message = this.agent.responseMessages_[0];
     const fulfillmentText = message.ssml || message.text;
-    this.sendJson_({fulfillmentText: fulfillmentText});
+    this.addJson_({fulfillmentText: fulfillmentText});
   }
 
   /**
@@ -177,8 +177,8 @@ class V2Agent {
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendPayloadResponse_(payload, requestSource) {
-    this.sendJson_({payload: payload.getPayload_(requestSource)});
+  addPayloadResponse_(payload, requestSource) {
+    this.addJson_({payload: payload.getPayload_(requestSource)});
   }
 
   /**
@@ -188,8 +188,8 @@ class V2Agent {
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendMessagesResponse_(requestSource) {
-    this.sendJson_({
+  addMessagesResponse_(requestSource) {
+    this.addJson_({
       fulfillmentMessages: this.buildResponseMessages_(requestSource),
     });
   }
@@ -200,7 +200,20 @@ class V2Agent {
    * @param {Object} responseJson JSON to send to Dialogflow
    * @private
    */
-  sendJson_(responseJson) {
+  addJson_(responseJson) {
+    if (!this.responseJson_) {
+      this.responseJson_ = {};
+    }
+    this.responseJson_.assign(responseJson);
+  }
+  
+  /**
+   * Send v2 response to Dialogflow fulfillment webhook request
+   *
+   * @private
+   */
+  sendResponse_() {
+    let responseJson = this.responseJson_ || {};
     responseJson.outputContexts = this.agent.outgoingContexts_;
     this.agent.followupEvent_ ? responseJson.followupEventInput = this.agent.followupEvent_ : undefined;
 
