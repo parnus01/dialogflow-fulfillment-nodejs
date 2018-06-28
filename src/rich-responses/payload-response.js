@@ -118,7 +118,7 @@ class Payload extends RichResponse {
   getV1ResponseObject_() {
     return {
       type: 4,
-      payload: this.getPayload_(this.platform);
+      payload: this.getPayload_(this.platform)
     };
   }
 
