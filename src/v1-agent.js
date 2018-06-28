@@ -185,7 +185,7 @@ class V1Agent {
     if (!this.responseJson_) {
       this.responseJson_ = {};
     }
-    this.responseJson_.assign(responseJson);
+    Object.assign(this.responseJson_, responseJson);
   }
   
   /**
