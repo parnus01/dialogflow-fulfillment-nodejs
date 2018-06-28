@@ -205,6 +205,7 @@ class V2Agent {
       this.responseJson_ = {};
     }
     Object.assign(this.responseJson_, responseJson);
+    console.log('added JSON: ', this.responseJson_);
   }
   
   /**
