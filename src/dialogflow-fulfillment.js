@@ -448,15 +448,16 @@ class WebhookClient {
     const payload = this.existingPayload_(requestSource);
     if (messages.length === 1 &&
       messages[0] instanceof Text) {
-      this.client.sendTextResponse_();
-    } else if (payload) {
-      this.client.sendPayloadResponse_(payload, requestSource);
-    } else if (SUPPORTED_RICH_MESSAGE_PLATFORMS.indexOf(this.requestSource) > -1
-      || this.requestSource === null) {
-      this.client.sendMessagesResponse_(requestSource);
-    } else {
-      throw new Error(`No responses defined for platform: ${this.requestSource}`);
+      this.client.addTextResponse_();
     }
+    if (payload) {
+      this.client.addPayloadResponse_(payload, requestSource);
+    }
+    if (SUPPORTED_RICH_MESSAGE_PLATFORMS.indexOf(this.requestSource) > -1
+      || this.requestSource === null) {
+      this.client.addMessagesResponse_(requestSource);
+    }
+    this.client.sendResponses_(requestSource);
   }
 
   /**
