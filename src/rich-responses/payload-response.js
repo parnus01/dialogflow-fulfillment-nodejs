@@ -118,7 +118,7 @@ class Payload extends RichResponse {
   getV1ResponseObject_() {
     return {
       type: 4,
-      payload: this.payload
+      payload: this.getPayload_(this.platform);
     };
   }
 
@@ -129,7 +129,7 @@ class Payload extends RichResponse {
    * @private
    */
   getV2ResponseObject_() {
-    return {payload: this.getPayload_()};
+    return {payload: this.getPayload_(this.platform)};
   }
 }
 
