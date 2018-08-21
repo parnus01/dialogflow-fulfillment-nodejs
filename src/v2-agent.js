@@ -55,6 +55,22 @@ class V2Agent {
    */
   processRequest_() {
     /**
+     * Dialogflow request ID
+     * https://dialogflow.com/docs/fulfillment
+     * @type {string}
+     */
+    this.agent.requestId = this.agent.request_.body.responseId;
+    debug(`Request ID: ${this.agent.requestId}`);
+
+    /**
+     * Dialogflow session ID
+     * https://dialogflow.com/docs/fulfillment
+     * @type {string}
+     */
+    this.agent.session = this.agent.request_.body.session;
+    debug(`Session: ${this.agent.session}`);
+
+    /**
      * Dialogflow intent or null if no value
      * https://dialogflow.com/docs/intents
      * @type {string}
@@ -70,14 +86,6 @@ class V2Agent {
       ? this.agent.request_.body.queryResult.action
       : null;
     debug(`Action: ${this.agent.action}`);
-
-    /**
-     * Dialogflow input contexts included in the request or null if no value
-     * https://dialogflow.com/docs/reference/api-v2/rest/v2beta1/WebhookRequest#FIELDS.session
-     * @type {string}
-     */
-    this.agent.session = this.agent.request_.body.session;
-    debug(`v2 Session: ${JSON.stringify(this.agent.session)}`);
 
     /**
      * Dialogflow parameters included in the request or null if no value

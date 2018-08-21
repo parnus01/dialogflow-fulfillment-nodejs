@@ -113,6 +113,18 @@ class WebhookClient {
     this.outgoingContexts_ = [];
 
     /**
+     * Dialogflow request ID
+     * @type {string}
+     */
+    this.requestId = null;
+
+    /**
+     * Dialogflow session ID
+     * @type {string}
+     */
+    this.session = null;
+
+    /**
      * Dialogflow intent name or null if no value: https://dialogflow.com/docs/intents
      * @type {string}
      */
@@ -164,14 +176,6 @@ class WebhookClient {
      * @type {string} locale language code indicating the spoken/written language of the original request
      */
     this.locale = null;
-
-    /**
-     * Dialogflow input contexts included in the request or null if no value
-     * Dialogflow v2 API only
-     * https://dialogflow.com/docs/reference/api-v2/rest/v2beta1/WebhookRequest#FIELDS.session
-     * @type {string}
-     */
-    this.session = null;
 
     /**
      * List of messages defined in Dialogflow's console for the matched intent

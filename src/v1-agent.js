@@ -53,6 +53,22 @@ class V1Agent {
    */
   processRequest_() {
     /**
+     * Dialogflow request ID
+     * https://dialogflow.com/docs/fulfillment
+     * @type {string}
+     */
+    this.agent.requestId = this.agent.request_.body.id;
+    debug(`Request ID: ${this.agent.requestId}`);
+
+    /**
+     * Dialogflow session ID
+     * https://dialogflow.com/docs/fulfillment
+     * @type {string}
+     */
+    this.agent.session = this.agent.request_.body.sessionId;
+    debug(`Session: ${this.agent.session}`);
+
+    /**
      * Dialogflow intent or null if no value
      * https://dialogflow.com/docs/intents
      * @type {string}
