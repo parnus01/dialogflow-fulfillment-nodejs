@@ -19,8 +19,6 @@ const debug = require('debug')('dialogflow:debug');
 // Configure logging for hosting platforms agent only support console.log and console.error
 debug.log = console.log.bind(console);
 
-const DEFAULT_CONTEXT_LIFESPAN = 5;
-
 // Response Builder classes
 const {
   V1_TO_V2_PLATFORM_NAME,
@@ -31,6 +29,9 @@ const Card = require('./rich-responses/card-response');
 const Image = require('./rich-responses/image-response');
 const Suggestion = require('./rich-responses/suggestions-response');
 const PayloadResponse = require('./rich-responses/payload-response');
+
+// Contexts class
+const Contexts = require('./contexts');
 
 /**
  * Class representing a v2 Dialogflow agent
@@ -103,6 +104,15 @@ class V2Agent {
     debug(`Request contexts: ${JSON.stringify(this.agent.contexts)}`);
 
     /**
+     * Instance of Dialogflow contexts class to provide an API to set/get/delete contexts
+     *
+     * @type {Contexts}
+     */
+    this.agent.context = new Contexts(
+      this.agent.request_.body.queryResult.outputContexts,
+      this.agent.session);
+
+    /**
      * Dialogflow source included in the request or null if no value
      * https://dialogflow.com/docs/reference/api-v2/rest/v2beta1/projects.agent.intents#Platform
      * @type {string}
@@ -155,54 +165,91 @@ class V2Agent {
       this.agent.consoleMessages = [];
     }
     debug(`Console messages: ${JSON.stringify(this.agent.consoleMessages)}`);
+
+    /**
+     * Alternative query results that have a high match score
+     * Query results can be from other Dialogflow intents or Knowledge Connectors
+     * https://cloud.google.com/dialogflow-enterprise/alpha/docs/knowledge-connectors
+     * Note:this feature is only available in Dialogflow API V2
+     *
+     * @type {object}
+     */
+    if (this.agent.request_.body.alternativeQueryResults) {
+      this.agent.alternativeQueryResults = this.agent.request_.body.alternativeQueryResults;
+    }
+    debug(`Alternative query result: ${JSON.stringify(this.agent.alternativeQueryResults)}`);
   }
 
   /**
-   * Send v2 text response to Dialogflow fulfillment webhook request based on
+   * Add v2 text response to Dialogflow fulfillment webhook request based on
    * single, developer defined text response
    *
    * @private
    */
-  sendTextResponse_() {
+  addTextResponse_() {
     const message = this.agent.responseMessages_[0];
     const fulfillmentText = message.ssml || message.text;
-    this.sendJson_({fulfillmentText: fulfillmentText});
+    this.addJson_({fulfillmentText: fulfillmentText});
   }
 
   /**
-   * Send v2 payload response to Dialogflow fulfillment webhook request based
+   * Add v2 payload response to Dialogflow fulfillment webhook request based
    * on developer defined payload response
    *
    * @param {Object} payload to back to requestSource (i.e. Google, Slack, etc.)
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendPayloadResponse_(payload, requestSource) {
-    this.sendJson_({payload: payload.getPayload_(requestSource)});
+  addPayloadResponse_(payload, requestSource) {
+    this.addJson_({payload: payload.getPayload_(requestSource)});
   }
 
   /**
-   * Send v2 response to Dialogflow fulfillment webhook request based on developer
+   * Add v2 response to Dialogflow fulfillment webhook request based on developer
    * defined response messages and original request source
    *
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendMessagesResponse_(requestSource) {
-    this.sendJson_({
-      fulfillmentMessages: this.buildResponseMessages_(requestSource),
-    });
+  addMessagesResponse_(requestSource) {
+    let messages = this.buildResponseMessages_(requestSource);
+    if (messages.length > 0) {
+      this.addJson_({fulfillmentMessages: messages});
+    }
+  }
+
+  /**
+   * Add v2 response to Dialogflow fulfillment webhook request
+   *
+   * @param {Object} responseJson JSON to send to Dialogflow
+   * @private
+   */
+  addJson_(responseJson) {
+    if (!this.responseJson_) {
+      this.responseJson_ = {};
+    }
+    Object.assign(this.responseJson_, responseJson);
   }
 
   /**
    * Send v2 response to Dialogflow fulfillment webhook request
    *
-   * @param {Object} responseJson JSON to send to Dialogflow
+   * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendJson_(responseJson) {
-    responseJson.outputContexts = this.agent.outgoingContexts_;
-    this.agent.followupEvent_ ? responseJson.followupEventInput = this.agent.followupEvent_ : undefined;
+  sendResponses_(requestSource) {
+    let responseJson = this.responseJson_;
+    if (!responseJson) {
+      throw new Error(`No responses defined for platform: ${requestSource}`);
+    }
+
+    responseJson.outputContexts = this.agent.context.getV2OutputContextsArray();
+    if (this.agent.followupEvent_) {
+      responseJson.followupEventInput = this.agent.followupEvent_;
+    }
+    if (this.agent.endConversation_) {
+      responseJson.triggerEndOfConversation = this.agent.endConversation_;
+    }
 
     debug('Response to Dialogflow: ' + JSON.stringify(responseJson));
     this.agent.response_.json(responseJson);
@@ -233,15 +280,7 @@ class V2Agent {
     if (context.name.match('/contexts/')) {
       context = this.convertV2ContextToV1Context_(context);
     }
-
-    // v2 contexts require the use of the session name and a transformation
-    // from a v1 context object to a v2 context object before adding
-    let v2Context = {};
-    v2Context.name = this.agent.session + '/contexts/' + context.name;
-    v2Context.lifespanCount = context.lifespan || DEFAULT_CONTEXT_LIFESPAN;
-    v2Context.parameters = context.parameters;
-
-    this.agent.outgoingContexts_.push(v2Context);
+    this.agent.context.set(context);
   }
 
   /**
@@ -275,15 +314,28 @@ class V2Agent {
   }
 
   /**
+   * Add a response or list of responses to be sent to Dialogflow and end the conversation
+   * Note: Only supported on Dialogflow v2's telephony gateway, Google Assistant and Alexa integrations
+   *
+   * @param {RichResponse|string|RichResponse[]|string[]} responses (list) or single responses
+   */
+  end_(responses) {
+    this.agent.endConversation_ = true;
+    this.agent.add(responses);
+  }
+
+  /**
    * Add an v2 Actions on Google response
    *
    * @param {Object} response a Actions on Google Dialogflow v2 webhook response
    * @private
    */
   addActionsOnGoogle_(response) {
-    response.outputContexts.forEach( (context) => {
-      this.addContext_(context);
-    });
+    if (response.outputContexts) {
+      response.outputContexts.forEach( (context) => {
+        this.addContext_(context);
+      });
+    }
 
     this.agent.add(new PayloadResponse(
       PLATFORMS.ACTIONS_ON_GOOGLE,
@@ -304,6 +356,7 @@ class V2Agent {
       text: this.convertTextJson_,
       card: this.convertCardJson_,
       image: this.convertImageJson_,
+      payload: this.convertPayloadJson_,
       quickReplies: this.convertQuickRepliesJson_,
       simpleResponses: this.convertSimpleResponsesJson_,
       basicCard: this.convertBasicCardJson_,
@@ -373,6 +426,22 @@ class V2Agent {
      platform: platform,
    });
   }
+
+  /**
+   * Convert incoming payload message object JSON into a Payload rich response
+   *
+   * @param {Object} messageJson is a the JSON implementation of the message
+   * @param {string} platform is the platform of the message object
+   * @return {RichResponse} richResponse implementation of the message
+   * @private
+   */
+  convertPayloadJson_(messageJson, platform) {
+    return new PayloadResponse(platform, messageJson.payload, {
+      rawPayload: true,
+      sendAsMessage: true,
+    });
+  }
+
   /**
    * Convert incoming quick reply message object JSON into a Text rich response
    *
@@ -392,6 +461,7 @@ class V2Agent {
     });
     return suggestions;
   }
+
   /**
    * Convert incoming simple response message object JSON into a Text rich response
    *
@@ -425,6 +495,7 @@ class V2Agent {
           platform: platform,
         });
   }
+
   /**
    * Convert incoming suggestions message object JSON into a Text rich response
    *

@@ -30,6 +30,9 @@ const Image = require('./rich-responses/image-response');
 const Suggestion = require('./rich-responses/suggestions-response');
 const PayloadResponse = require('./rich-responses/payload-response');
 
+// Contexts class
+const Contexts = require('./contexts');
+
 /**
  * Class representing a v1 Dialogflow agent
  */
@@ -83,6 +86,13 @@ class V1Agent {
      */
     this.agent.contexts = this.agent.request_.body.result.contexts;
     debug(`Input contexts: ${JSON.stringify(this.agent.contexts)}`);
+
+    /**
+     * Instance of Dialogflow contexts class to provide an API to set/get/delete contexts
+     *
+     * @type {Contexts}
+     */
+    this.agent.context = new Contexts(this.agent.request_.body.result.contexts);
 
     /**
      * Dialogflow source included in the request or null if no value
@@ -141,48 +151,69 @@ class V1Agent {
   }
 
   /**
-   * Send v1 text response to Dialogflow fulfillment webhook request based on
+   * Add v1 text response to Dialogflow fulfillment webhook request based on
    * single, developer defined text response
    *
    * @private
    */
-  sendTextResponse_() {
+  addTextResponse_() {
     const message = this.agent.responseMessages_[0];
     const speech = message.ssml || message.text;
-    this.sendJson_({speech: speech, displayText: message.text});
+    this.addJson_({speech: speech, displayText: message.text});
   }
 
   /**
-   * Send v1 payload response to Dialogflow fulfillment webhook request based
+   * Add v1 payload response to Dialogflow fulfillment webhook request based
    * on developer defined payload response
    *
    * @param {Object} payload to back to requestSource (i.e. Google, Slack, etc.)
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendPayloadResponse_(payload, requestSource) {
-    this.sendJson_({data: payload.getPayload_(requestSource)});
+  addPayloadResponse_(payload, requestSource) {
+    this.addJson_({data: payload.getPayload_(requestSource)});
   }
 
   /**
-   * Send v1 response to Dialogflow fulfillment webhook request based on developer
+   * Add v1 response to Dialogflow fulfillment webhook request based on developer
    * defined response messages and original request source
    *
    * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendMessagesResponse_(requestSource) {
-    this.sendJson_({messages: this.buildResponseMessages_(requestSource)});
+  addMessagesResponse_(requestSource) {
+    let messages = this.buildResponseMessages_(requestSource);
+    if (messages.length > 0) {
+      this.addJson_({messages: messages});
+    }
+  }
+
+  /**
+   * Add v1 response to Dialogflow fulfillment webhook request
+   *
+   * @param {Object} responseJson JSON to send to Dialogflow
+   * @private
+   */
+  addJson_(responseJson) {
+    if (!this.responseJson_) {
+      this.responseJson_ = {};
+    }
+    Object.assign(this.responseJson_, responseJson);
   }
 
   /**
    * Send v1 response to Dialogflow fulfillment webhook request
    *
-   * @param {Object} responseJson JSON to send to Dialogflow
+   * @param {string} requestSource string indicating the source of the initial request
    * @private
    */
-  sendJson_(responseJson) {
-    responseJson.contextOut = this.agent.outgoingContexts_;
+  sendResponses_(requestSource) {
+    let responseJson = this.responseJson_;
+    if (!responseJson) {
+      throw new Error(`No responses defined for platform: ${requestSource}`);
+    }
+
+    responseJson.contextOut = this.agent.context.getV1OutputContextsArray();
     this.agent.followupEvent_ ? responseJson.followupEvent = this.agent.followupEvent_ : undefined;
 
     debug('Response to Dialogflow: ' + JSON.stringify(responseJson));
@@ -213,7 +244,7 @@ class V1Agent {
    */
   addContext_(context) {
     // v1 contexts have the same structure as used by the library
-    this.agent.outgoingContexts_.push(context);
+    this.agent.context.set(context);
   }
 
   /**
@@ -226,9 +257,18 @@ class V1Agent {
     let eventJson = {
       name: event.name,
     };
-    event.parameters ? eventJson.data = event.parameters : undefined;
-
+    if (event.parameters) {
+      eventJson.data = event.parameters;
+    }
     this.agent.followupEvent_ = eventJson;
+  }
+
+  /**
+   * Add a response or list of responses to be sent to Dialogflow and end the conversation
+   * Note: not support on v1
+   */
+  end_() {
+    throw new Error('"end" method is not supported on Dialogflow API V1.  Please migrate to Dialogflow API V2.');
   }
 
   /**
@@ -238,9 +278,11 @@ class V1Agent {
    * @private
    */
   addActionsOnGoogle_(response) {
-    response.contextOut.forEach( (context) => {
-      this.addContext_(context);
-    });
+    if (response.contextOut) {
+      response.contextOut.forEach( (context) => {
+        this.addContext_(context);
+      });
+    }
 
     this.agent.add(new PayloadResponse(
       PLATFORMS.ACTIONS_ON_GOOGLE,
@@ -260,8 +302,10 @@ class V1Agent {
     const richResponseMapping = {
       '0': this.convertTextJson_,
       '1': this.convertCardJson_,
-      '3': this.convertImageJson_,
       '2': this.convertQuickRepliesJson_,
+      '3': this.convertImageJson_,
+      '4': this.convertPayloadJson_,
+      'custom_payload': this.convertPayloadJson_,
       'simple_response': this.convertSimpleResponsesJson_,
       'basic_card': this.convertBasicCardJson_,
       'suggestion_chips': this.convertSuggestionsJson_,
@@ -318,20 +362,6 @@ class V1Agent {
   }
 
   /**
-   * Convert incoming image message object JSON into a Text rich response
-   *
-   * @param {Object} messageJson is a the JSON implementation of the message
-   * @param {string} platform is the platform of the message object
-   * @return {RichResponse} richResponse implementation of the message
-   * @private
-   */
-  convertImageJson_(messageJson, platform) {
-    return new Image({
-      imageUrl: messageJson.imageUrl,
-      platform: platform,
-    });
-  }
-  /**
    * Convert incoming quick reply message object JSON into a Text rich response
    *
    * @param {Object} messageJson is a the JSON implementation of the message
@@ -350,6 +380,37 @@ class V1Agent {
     });
     return suggestions;
   }
+
+  /**
+   * Convert incoming image message object JSON into a Text rich response
+   *
+   * @param {Object} messageJson is a the JSON implementation of the message
+   * @param {string} platform is the platform of the message object
+   * @return {RichResponse} richResponse implementation of the message
+   * @private
+   */
+  convertImageJson_(messageJson, platform) {
+    return new Image({
+      imageUrl: messageJson.imageUrl,
+      platform: platform,
+    });
+  }
+
+  /**
+   * Convert incoming payload message object JSON into a Payload rich response
+   *
+   * @param {Object} messageJson is a the JSON implementation of the message
+   * @param {string} platform is the platform of the message object
+   * @return {RichResponse} richResponse implementation of the message
+   * @private
+   */
+  convertPayloadJson_(messageJson, platform) {
+    return new PayloadResponse(platform, messageJson.payload, {
+      rawPayload: true,
+      sendAsMessage: true,
+    });
+  }
+
   /**
    * Convert incoming simple response message object JSON into a Text rich response
    *
@@ -383,6 +444,7 @@ class V1Agent {
            platform: platform,
          });
   }
+
   /**
    * Convert incoming suggestions message object JSON into a Text rich response
    *

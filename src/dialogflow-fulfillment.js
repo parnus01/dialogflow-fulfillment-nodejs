@@ -28,6 +28,7 @@ const Payload = require('./rich-responses/payload-response');
 const {
   RichResponse,
   PLATFORMS,
+  SUPPORTED_PLATFORMS,
   SUPPORTED_RICH_MESSAGE_PLATFORMS,
 } = require('./rich-responses/rich-response');
 const V1Agent = require('./v1-agent');
@@ -103,6 +104,15 @@ class WebhookClient {
      */
     this.followupEvent_ = null;
 
+
+    /**
+     * Boolean indicating whether the conversation should continue after the Dialogflow agent's response
+     *
+     * @private
+     * @type Boolean
+     */
+    this.endConversation_ = false;
+
     /**
      * List of outgoing contexts defined by the developer
      *
@@ -134,8 +144,16 @@ class WebhookClient {
      * Dialogflow contexts included in the request or null if no value
      * https://dialogflow.com/docs/contexts
      * @type {string}
+     * @deprecated
      */
     this.contexts = null;
+
+    /**
+     * Instance of Dialogflow contexts class to provide an API to set/get/delete contexts
+     *
+     * @type {Contexts}
+     */
+    this.context = null;
 
     /**
      * Dialogflow source included in the request or null if no value
@@ -168,6 +186,7 @@ class WebhookClient {
      * Dialogflow input contexts included in the request or null if no value
      * Dialogflow v2 API only
      * https://dialogflow.com/docs/reference/api-v2/rest/v2beta1/WebhookRequest#FIELDS.session
+     *
      * @type {string}
      */
     this.session = null;
@@ -179,6 +198,16 @@ class WebhookClient {
      * @type {RichResponse[]}
      */
     this.consoleMessages = [];
+
+    /**
+     * List of alternative query results
+     * Query results can be from other Dialogflow intents or Knowledge Connectors
+     * https://cloud.google.com/dialogflow-enterprise/alpha/docs/knowledge-connectors
+     * Note:this feature only availbe in Dialogflow v2
+     *
+     * @type {object}
+     */
+    this.alternativeQueryResults = null;
 
     /**
      * Platform contants, to define platforms, includes supported platforms and unspecified
@@ -227,7 +256,18 @@ class WebhookClient {
   }
 
   /**
+   * Add a response or list of responses to be sent to Dialogflow and end the conversation
+   * Note: Only supported on Dialogflow v2's telephony gateway, Google Assistant and Alexa integrations
+   *
+   * @param {RichResponse|string|RichResponse[]|string[]} responses (list) or single responses
+   */
+  end(responses) {
+    this.client.end_(responses);
+  }
+
+  /**
    * Add a response to be sent to Dialogflow
+   * Private method to add a response to be sent to Dialogflow
    *
    * @param {RichResponse|string} response an object or string representing the rich response to be added
    */
@@ -289,7 +329,7 @@ class WebhookClient {
   }
 
   // --------------------------------------------------------------------------
-  //          Context and follow-up event methods
+  //          Deprecated Context methods
   // --------------------------------------------------------------------------
   /**
    * Set a new Dialogflow outgoing context: https://dialogflow.com/docs/contexts
@@ -303,18 +343,15 @@ class WebhookClient {
    *
    * @param {string|Object} context name of context or an object representing a context
    * @return {WebhookClient}
+   * @deprecated
    */
   setContext(context) {
-    // If developer provides a string, transform to context object, using string as the name
+    console.warn('setContext is deprecated, migrate to `context.set`');
     if (typeof context === 'string') {
-      context = {name: context};
+      this.context.set(context);
+    } else {
+      this.context.set(context.name, context.lifespan, context.parameters);
     }
-    if (context && !context.name) {
-      throw new Error('context must be provided and must have a name');
-    }
-
-    this.client.addContext_(context);
-
     return this;
   }
 
@@ -327,9 +364,13 @@ class WebhookClient {
    * agent.clearOutgoingContexts();
    *
    * @return {WebhookClient}
+   * @deprecated
    */
   clearOutgoingContexts() {
-    this.outgoingContexts_ = [];
+    console.warn('clearOutgoingContexts is deprecated, migrate to `context.delete` or `context.set`');
+    for (const ctx of this.context) {
+      this.context._removeOutgoingContext(ctx.name);
+    }
     return this;
   }
 
@@ -343,20 +384,11 @@ class WebhookClient {
    *
    * @param {string} context name of an existing outgoing context
    * @return {WebhookClient}
+   * @deprecated
    */
   clearContext(context) {
-    if (this.agentVersion === 1) {
-      this.outgoingContexts_ = this.outgoingContexts_.filter(
-        (ctx) => ctx.name !== context
-      );
-    } else if (this.agentVersion === 2) {
-      // Take all existing outgoing contexts and filter out the context that needs to be cleared
-      this.outgoingContexts_ = this.outgoingContexts_.filter(
-        (ctx) => ctx.name.slice(-context.length) !== context
-      );
-    } else {
-      debug('Couldn\'t find context');
-    }
+    console.warn('clearContext is deprecated, migrate to `context.delete` or `context.set`');
+    this.context._removeOutgoingContext(context);
     return this;
   }
 
@@ -370,11 +402,25 @@ class WebhookClient {
    *
    * @param {string} contextName name of an context present in the Dialogflow webhook request
    * @return {Object} context context object with the context name
+   * @deprecated
    */
   getContext(contextName) {
-    return this.contexts.filter( (context) => context.name === contextName )[0] || null;
+    console.warn('getContext is deprecated, migrate to `context.get`');
+    const context = this.context.get(contextName);
+    if (context) {
+      return {
+        name: contextName,
+        lifespan: context.lifespan,
+        parameters: context.parameters,
+      };
+    } else {
+      return null;
+    }
   }
 
+  // --------------------------------------------------------------------------
+  //          Follow-up event method
+  // --------------------------------------------------------------------------
   /**
    * Set the followup event
    *
@@ -443,20 +489,20 @@ class WebhookClient {
     }
 
     // if there is only text, send response
+    // if platform may support messages, send messages
     // if there is a payload, send the payload for the repsonse
-    // if platform supports messages, send messages
     const payload = this.existingPayload_(requestSource);
     if (messages.length === 1 &&
       messages[0] instanceof Text) {
-      this.client.sendTextResponse_();
-    } else if (payload) {
-      this.client.sendPayloadResponse_(payload, requestSource);
+      this.client.addTextResponse_();
     } else if (SUPPORTED_RICH_MESSAGE_PLATFORMS.indexOf(this.requestSource) > -1
-      || this.requestSource === null) {
-      this.client.sendMessagesResponse_(requestSource);
-    } else {
-      throw new Error(`No responses defined for platform: ${this.requestSource}`);
+      || SUPPORTED_PLATFORMS.indexOf(this.requestSource) < 0) {
+      this.client.addMessagesResponse_(requestSource);
     }
+    if (payload && !payload.sendAsMessage) {
+      this.client.addPayloadResponse_(payload, requestSource);
+    }
+    this.client.sendResponses_(requestSource);
   }
 
   /**

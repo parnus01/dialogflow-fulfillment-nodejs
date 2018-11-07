@@ -258,21 +258,10 @@ test('Test v2 Twitter payload response', async (t) => {
 test('Test v2 contexts', async (t) => {
   const v2Request = mockGoogleV2Request;
   const sampleContextName = 'sample context name';
-  const sampleV2ContextName =
-    v2Request.session + '/contexts/' + sampleContextName;
   const secondContextName = 'second context name';
-  const secondV2ContextName =
-    v2Request.session + '/contexts/' + secondContextName;
   const complexContext = {
     name: 'weather',
     lifespan: 2,
-    parameters: {city: 'Rome'},
-  };
-  const complexV2ContextName =
-    v2Request.session + '/contexts/' + complexContext.name;
-  const complexV2Context = {
-    name: complexV2ContextName,
-    lifespanCount: 2,
     parameters: {city: 'Rome'},
   };
 
@@ -285,21 +274,24 @@ test('Test v2 contexts', async (t) => {
   // setContext
   agent.setContext(sampleContextName);
   t.deepEqual(
-    {name: sampleV2ContextName, lifespanCount: 5, parameters: undefined},
-    agent.outgoingContexts_[0]
+    {name: sampleContextName},
+    agent.context.get(sampleContextName)
   );
   agent.setContext(secondContextName);
   t.deepEqual(
-    {name: secondV2ContextName, lifespanCount: 5, parameters: undefined},
-    agent.outgoingContexts_[1]
+    {name: secondContextName},
+    agent.context.get(secondContextName)
   );
   agent.setContext(complexContext);
-  t.deepEqual(complexV2Context, agent.outgoingContexts_[2]);
+  t.deepEqual(
+    {name: complexContext.name, lifespan: 2, parameters: {city: 'Rome'}},
+    agent.context.get(complexContext.name)
+  );
   // clearContext
   agent.clearContext(sampleContextName);
   t.deepEqual(
-    {name: secondV2ContextName, lifespanCount: 5, parameters: undefined},
-    agent.outgoingContexts_[0]
+    undefined,
+    agent.context.get(sampleContextName)
   );
   // clearAllContext
   agent.clearOutgoingContexts();
@@ -418,30 +410,42 @@ test('Test v2 consoleMessages', async (t) => {
   t.is(facebookImage.imageUrl,
     'https://developers.google.com/actions/images/badges/XPM_BADGING_GoogleAssistant_VER.png'
   );
+  // Facebook payload
+  const facebookPayload = consoleMessages[4];
+  t.true(facebookPayload instanceof Payload);
+  t.deepEqual(facebookPayload.payload,
+      {'key': 'Facebook Messenger Payload'}
+  );
   // Actions on Google text
-  const actionsOnGoogleText = consoleMessages[4];
+  const actionsOnGoogleText = consoleMessages[5];
   t.true(actionsOnGoogleText instanceof Text);
   t.is(actionsOnGoogleText.text, 'Actions on Google simple response');
   t.is(actionsOnGoogleText.platform, PLATFORMS.ACTIONS_ON_GOOGLE);
   // Actions on Google card
-  const actionsOnGoogleCard = consoleMessages[5];
+  const actionsOnGoogleCard = consoleMessages[6];
   t.true(actionsOnGoogleCard instanceof Card);
   t.is(actionsOnGoogleCard.text, 'basic card');
   // Actions on Google suggestion
-  const actionsOnGoogleSuggestion = consoleMessages[6];
+  const actionsOnGoogleSuggestion = consoleMessages[7];
   t.true(actionsOnGoogleSuggestion instanceof Suggestion);
   t.is(actionsOnGoogleSuggestion.replies[0], 'suggestion');
   // Actions on Google suggestion 2
-  const actionsOnGoogleSuggestio2 = consoleMessages[7];
+  const actionsOnGoogleSuggestio2 = consoleMessages[8];
   t.true(actionsOnGoogleSuggestio2 instanceof Suggestion);
   t.is(actionsOnGoogleSuggestio2.replies[0], 'another suggestion');
   // Actions on Google text 2
-  const actionsOnGoogleText2 = consoleMessages[8];
+  const actionsOnGoogleText2 = consoleMessages[9];
   t.true(actionsOnGoogleText2 instanceof Text);
   t.is(actionsOnGoogleText2.text, 'another Actions on Google simple response');
+  // Actions on Google payload
+  const actionsOnGooglePayload = consoleMessages[10];
+  t.true(actionsOnGooglePayload instanceof Payload);
+  t.deepEqual(actionsOnGooglePayload.payload,
+      {'google': 'payload'}
+  );
 });
 
-test('Test v1 original request', async (t) => {
+test('Test v2 original request', async (t) => {
   let response = new ResponseMock();
 
   let googleRequest = {body: mockGoogleV2Request};
@@ -476,6 +480,34 @@ test('Test v2 no handler defined', async (t) => {
   t.is(
     noHandlerDefinedError.message,
     'No handler for requested intent'
+  );
+});
+
+test('Test v2 alternative query results', async (t) => {
+  // Request with Knowledge connector response
+  let request = {body: mockV2KnowledgeConnector};
+  let agent = new WebhookClient({
+    request: request,
+    response: new ResponseMock(),
+  });
+
+  t.deepEqual(mockV2KnowledgeConnector.alternativeQueryResults,
+    agent.alternativeQueryResults
+  );
+});
+
+test('Test v2 end conversation', async (t) => {
+  // Request with Knowledge connector response
+  let request = {body: mockV2KnowledgeConnector};
+
+  webhookTest(
+    request,
+    (agent) => {
+      agent.end('thanks for talking to me!');
+    },
+    (responseJson) => {
+      t.deepEqual(responseJson.triggerEndOfConversation, true);
+    }
   );
 });
 
@@ -1288,6 +1320,12 @@ const mockV2MulipleConsoleMessages = {
         'platform': 'FACEBOOK',
       },
       {
+        'payload': {
+          'key': 'Facebook Messenger Payload',
+        },
+        'platform': 'FACEBOOK',
+      },
+      {
         'platform': 'ACTIONS_ON_GOOGLE',
         'simpleResponses': {
           'simpleResponses': [
@@ -1330,6 +1368,12 @@ const mockV2MulipleConsoleMessages = {
           ],
         },
       },
+      {
+        'platform': 'ACTIONS_ON_GOOGLE',
+        'payload': {
+          'google': 'payload',
+        },
+      },
     ],
     'intent': {
       'name': 'projects/anotheragent-c5ea8/agent/intents/96f2305b-1cd0-4d73-97c0-3cfe669ec79b',
@@ -1339,4 +1383,26 @@ const mockV2MulipleConsoleMessages = {
     'diagnosticInfo': {},
     'languageCode': 'en',
   },
+};
+
+const mockV2KnowledgeConnector = {
+  'responseId': 'cc3ec71d-7526-43f7-9381-128f60a5f44f',
+  'queryResult': {
+    'queryText': 'every rich response',
+    'parameters': {},
+    'allRequiredParamsPresent': true,
+    'fulfillmentMessages': [],
+    'intent': {
+      'name': 'projects/anotheragent-c5ea8/agent/intents/96f2305b-1cd0-4d73-97c0-3cfe669ec79b',
+      'displayName': 'every rich response',
+    },
+    'intentDetectionConfidence': 1,
+    'diagnosticInfo': {},
+    'languageCode': 'en',
+  },
+  'alternativeQueryResults': [
+    {
+      'queryText': 'knowledge connector text',
+    },
+  ],
 };
